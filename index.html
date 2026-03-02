@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HCI Docks - EZ Dock Layout Designer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(180deg, #0B1D33 0%, #143050 50%, #1A3A5C 100%); color: #E8E4D9; min-height: 100vh; }
+  @media print { .no-print { display: none !important; } body { background: #fff !important; } svg rect[fill="#1A5276"] { display: none; } }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(220,60,60,0.5); } 50% { box-shadow: 0 0 0 14px rgba(220,60,60,0); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+  input[type=range] { accent-color: #2A6496; }
+  ::placeholder { color: #5A7A9A; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>
+const { useState, useRef, useCallback, createElement: h, Fragment } = React;
+
+const DOCK_SECTIONS = {
+  "40x60": { name: '40" x 60"', w: 40, h: 60, capacity: 1000, color: "#D4C8A0" },
+  "40x120": { name: '40" x 10\'', w: 40, h: 120, capacity: 2000, color: "#D4C8A0" },
+  "60x120": { name: '60" x 10\'', w: 60, h: 120, capacity: 3000, color: "#D4C8A0" },
+  "80x120": { name: '80" x 10\'', w: 80, h: 120, capacity: 4000, color: "#D4C8A0" },
+  "100x80": { name: '100" x 80"', w: 100, h: 80, capacity: 3200, color: "#D4C8A0" },
+};
+
+const ACCESSORIES = {
+  ezport: { name: "EZ Port (PWC Lift)", w: 60, h: 140, color: "#8BA8C4" },
+  ezportmax: { name: "EZ Port MAX", w: 50, h: 130, color: "#7A9BB5" },
+  kayaklaunch: { name: "Kayak Launch", w: 48, h: 96, color: "#9BB87A" },
+  boatport: { name: "EZ BoatPort", w: 120, h: 200, color: "#6A8FAF" },
+  gangway: { name: "Aluminum Gangway", w: 36, h: 120, color: "#B0B0B0" },
+};
+
+const CONFIGS = {
+  straight: "Straight Dock",
+  lshape: "L-Shape",
+  tshape: "T-Shape",
+  ushape: "U-Shape",
+  platform: "Platform / Rectangle",
+  fshape: "F-Shape",
+};
+
+const SECTION_OPTIONS = ["40x120", "60x120", "80x120"];
+
+function generateLayout(config, mainLength, width, armLength, sectionType) {
+  const sec = DOCK_SECTIONS[sectionType];
+  const pieces = [];
+  const secW = sec.w, secH = sec.h;
+  const mainCount = Math.max(1, Math.round((mainLength * 12) / secH));
+  const armCount = Math.max(1, Math.round((armLength * 12) / secH));
+
+  if (config === "straight") {
+    for (let i = 0; i < mainCount; i++) pieces.push({ x: 0, y: i * secH, w: secW, h: secH, type: sectionType });
+  } else if (config === "lshape") {
+    for (let i = 0; i < mainCount; i++) pieces.push({ x: 0, y: i * secH, w: secW, h: secH, type: sectionType });
+    for (let i = 0; i < armCount; i++) pieces.push({ x: secW + i * secH, y: (mainCount - 1) * secH, w: secH, h: secW, type: sectionType });
+  } else if (config === "tshape") {
+    for (let i = 0; i < mainCount; i++) pieces.push({ x: armCount * secH / 2 - secW / 2 + secH / 2, y: i * secH, w: secW, h: secH, type: sectionType });
+    const tY = (mainCount - 1) * secH;
+    for (let i = 0; i < armCount; i++) pieces.push({ x: i * secH, y: tY, w: secH, h: secW, type: sectionType });
+  } else if (config === "ushape") {
+    for (let i = 0; i < mainCount; i++) pieces.push({ x: 0, y: i * secH, w: secW, h: secH, type: sectionType });
+    for (let i = 0; i < mainCount; i++) pieces.push({ x: secW + armCount * secH, y: i * secH, w: secW, h: secH, type: sectionType });
+    for (let i = 0; i < armCount; i++) pieces.push({ x: secW + i * secH, y: (mainCount - 1) * secH, w: secH, h: secW, type: sectionType });
+  } else if (config === "platform") {
+    const wCount = Math.max(1, Math.round((width * 12) / secW));
+    for (let r = 0; r < mainCount; r++) for (let c = 0; c < wCount; c++) pieces.push({ x: c * secW, y: r * secH, w: secW, h: secH, type: sectionType });
+  } else if (config === "fshape") {
+    for (let i = 0; i < mainCount; i++) pieces.push({ x: 0, y: i * secH, w: secW, h: secH, type: sectionType });
+    const arm1Y = Math.floor(mainCount * 0.3) * secH;
+    for (let i = 0; i < armCount; i++) pieces.push({ x: secW + i * secH, y: arm1Y, w: secH, h: secW, type: sectionType });
+    const arm2Y = (mainCount - 1) * secH;
+    for (let i = 0; i < armCount; i++) pieces.push({ x: secW + i * secH, y: arm2Y, w: secH, h: secW, type: sectionType });
+  }
+  return pieces;
+}
+
+function getPartsList(pieces, accessories) {
+  const counts = {}, accCounts = {};
+  pieces.forEach(p => { counts[p.type] = (counts[p.type] || 0) + 1; });
+  accessories.forEach(a => { accCounts[a.type] = (accCounts[a.type] || 0) + 1; });
+  return { sections: counts, accessories: accCounts, couplings: Math.max(0, pieces.length - 1) * 2 };
+}
+
+function getBounds(pieces, accessories) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  [...pieces, ...accessories].forEach(p => {
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + p.w); maxY = Math.max(maxY, p.y + p.h);
+  });
+  if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 400, maxY: 400 };
+  return { minX: minX - 50, minY: minY - 50, maxX: maxX + 50, maxY: maxY + 50 };
+}
+
+async function parseWithAI(text) {
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: 'You are a dock design parser for EZ Dock floating modular docks. Parse this customer request into JSON.\n\nInput: "' + text + '"\n\nReturn ONLY valid JSON:\n{\n  "config": one of "straight", "lshape", "tshape", "ushape", "platform", "fshape",\n  "mainLength": number in feet,\n  "width": number in feet (only for platform, otherwise 0),\n  "armLength": number in feet (for L/T/U/F, otherwise 0),\n  "sectionWidth": 40 or 60 or 80 (inches based on width: 3ft=40, 5ft=60, 6.5ft=80),\n  "accessories": array from ["ezport","ezportmax","kayaklaunch","boatport","gangway"],\n  "customerName": string if mentioned else ""\n}\n\nRules:\n- "I-shaped" or "straight" = "straight"\n- "5 foot wide" means sectionWidth=60\n- "jet ski lift" or "PWC lift" = "ezport"\n- "boat lift" = "boatport"\n- If "2 jet ski lifts" put "ezport" twice\n- Default mainLength=20, sectionWidth=60 if not specified\n\nReturn ONLY JSON.' }],
+      }),
+    });
+    const data = await res.json();
+    return JSON.parse(data.content[0].text.replace(/```json|```/g, "").trim());
+  } catch (e) { console.error("AI parse error:", e); return null; }
+}
+
+function DockDesigner() {
+  const [config, setConfig] = useState("straight");
+  const [mainLength, setMainLength] = useState(20);
+  const [width, setWidth] = useState(10);
+  const [armLength, setArmLength] = useState(10);
+  const [sectionType, setSectionType] = useState("60x120");
+  const [placedAcc, setPlacedAcc] = useState([]);
+  const [custName, setCustName] = useState("");
+  const [custNotes, setCustNotes] = useState("");
+  const [showParts, setShowParts] = useState(false);
+  const [addingAcc, setAddingAcc] = useState(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceText, setVoiceText] = useState("");
+  const [voiceStatus, setVoiceStatus] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
+  const [textInput, setTextInput] = useState("");
+  const svgRef = useRef(null);
+  const recRef = useRef(null);
+  const vtRef = useRef("");
+
+  const pieces = generateLayout(config, mainLength, width, armLength, sectionType);
+  const bounds = getBounds(pieces, placedAcc);
+  const viewW = bounds.maxX - bounds.minX;
+  const viewH = bounds.maxY - bounds.minY;
+  const parts = getPartsList(pieces, placedAcc);
+  const totalCap = pieces.reduce((s, p) => s + DOCK_SECTIONS[p.type].capacity, 0);
+
+  const applyParsed = useCallback(parsed => {
+    if (!parsed) { setVoiceStatus("Couldn't understand that. Try again."); return; }
+    if (parsed.config) setConfig(parsed.config);
+    if (parsed.mainLength) setMainLength(Math.min(100, Math.max(5, parsed.mainLength)));
+    if (parsed.width) setWidth(Math.min(40, Math.max(5, parsed.width)));
+    if (parsed.armLength) setArmLength(Math.min(60, Math.max(5, parsed.armLength)));
+    if (parsed.sectionWidth) {
+      if (parsed.sectionWidth <= 45) setSectionType("40x120");
+      else if (parsed.sectionWidth <= 65) setSectionType("60x120");
+      else setSectionType("80x120");
+    }
+    if (parsed.customerName) setCustName(parsed.customerName);
+    if (parsed.accessories && parsed.accessories.length > 0) {
+      const na = parsed.accessories.map((type, i) => {
+        const ac = ACCESSORIES[type]; if (!ac) return null;
+        return { type, x: 80 + i * 70, y: -ac.h - 20, w: ac.w, h: ac.h };
+      }).filter(Boolean);
+      setPlacedAcc(na);
+    }
+    setVoiceStatus("Done! Design updated.");
+    setTimeout(() => setVoiceStatus(""), 4000);
+  }, []);
+
+  const processInput = useCallback(async text => {
+    if (!text.trim()) return;
+    setIsParsing(true); setVoiceStatus("Understanding your request...");
+    applyParsed(await parseWithAI(text));
+    setIsParsing(false);
+  }, [applyParsed]);
+
+  const startListening = useCallback(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { setVoiceStatus("Speech not supported. Use Chrome or type below."); return; }
+    const rec = new SR();
+    rec.continuous = false; rec.interimResults = true; rec.lang = "en-US";
+    recRef.current = rec;
+    rec.onstart = () => { setIsListening(true); setVoiceText(""); vtRef.current = ""; setVoiceStatus("Listening... speak now"); };
+    rec.onresult = e => {
+      let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      setVoiceText(t); vtRef.current = t;
+    };
+    rec.onend = async () => {
+      setIsListening(false);
+      if (vtRef.current.trim()) await processInput(vtRef.current);
+      else setVoiceStatus("Didn't catch that. Try again.");
+    };
+    rec.onerror = e => { setIsListening(false); setVoiceStatus("Mic error: " + e.error + ". Check browser permissions."); };
+    rec.start();
+  }, [processInput]);
+
+  const stopListening = useCallback(() => { if (recRef.current) recRef.current.stop(); }, []);
+
+  const handleTextSubmit = async () => {
+    if (!textInput.trim()) return;
+    const t = textInput; setTextInput(""); await processInput(t);
+  };
+
+  const handleSvgClick = useCallback(e => {
+    if (!addingAcc || !svgRef.current) return;
+    const r = svgRef.current.getBoundingClientRect();
+    const cx = ((e.clientX - r.left) / r.width) * viewW + bounds.minX;
+    const cy = ((e.clientY - r.top) / r.height) * viewH + bounds.minY;
+    const ac = ACCESSORIES[addingAcc];
+    setPlacedAcc(prev => [...prev, { type: addingAcc, x: cx - ac.w / 2, y: cy - ac.h / 2, w: ac.w, h: ac.h }]);
+    setAddingAcc(null);
+  }, [addingAcc, bounds, viewW, viewH]);
+
+  const removeAcc = idx => setPlacedAcc(prev => prev.filter((_, i) => i !== idx));
+
+  // Build SVG children
+  const svgChildren = [];
+  // Water bg
+  svgChildren.push(h("rect", { key: "bg", x: bounds.minX, y: bounds.minY, width: viewW, height: viewH, fill: "#1A5276", rx: 8, opacity: 0.3 }));
+  // Grid
+  for (let i = 0; i <= Math.ceil(viewW / 120); i++) svgChildren.push(h("line", { key: "gv" + i, x1: bounds.minX + i * 120, y1: bounds.minY, x2: bounds.minX + i * 120, y2: bounds.maxY, stroke: "rgba(255,255,255,0.04)" }));
+  for (let i = 0; i <= Math.ceil(viewH / 120); i++) svgChildren.push(h("line", { key: "gh" + i, x1: bounds.minX, y1: bounds.minY + i * 120, x2: bounds.maxX, y2: bounds.minY + i * 120, stroke: "rgba(255,255,255,0.04)" }));
+  // Dock pieces
+  pieces.forEach((p, i) => {
+    const children = [h("rect", { key: "r", x: p.x, y: p.y, width: p.w, height: p.h, fill: DOCK_SECTIONS[p.type].color, stroke: "#A09060", strokeWidth: 1.5, rx: 2, opacity: 0.92 })];
+    for (let j = 0; j < Math.floor(p.h / 20); j++) children.push(h("circle", { key: "c" + j, cx: p.x + p.w / 2, cy: p.y + 10 + j * 20, r: 2, fill: "rgba(0,0,0,0.15)" }));
+    if (i > 0) {
+      children.push(h("rect", { key: "cl", x: p.x + 4, y: p.y - 2, width: 8, height: 4, fill: "#888", rx: 1 }));
+      children.push(h("rect", { key: "cr", x: p.x + p.w - 12, y: p.y - 2, width: 8, height: 4, fill: "#888", rx: 1 }));
+    }
+    svgChildren.push(h("g", { key: "p" + i }, ...children));
+  });
+  // Accessories
+  placedAcc.forEach((a, i) => {
+    const ac = ACCESSORIES[a.type];
+    svgChildren.push(h("g", { key: "a" + i },
+      h("rect", { x: a.x, y: a.y, width: a.w, height: a.h, fill: ac.color, stroke: "#fff", strokeWidth: 1.5, rx: 4, opacity: 0.85 }),
+      h("text", { x: a.x + a.w / 2, y: a.y + a.h / 2, textAnchor: "middle", dominantBaseline: "middle", fill: "#fff", fontSize: 9, fontWeight: "600", fontFamily: "'Outfit'" }, ac.name.split(" ").slice(0, 2).join(" "))
+    ));
+  });
+  // Dimension lines
+  if (pieces.length > 0) {
+    const minPy = Math.min(...pieces.map(p => p.y));
+    const maxPh = Math.max(...pieces.map(p => p.y + p.h));
+    const minPx = Math.min(...pieces.map(p => p.x));
+    const midY = (minPy + maxPh) / 2;
+    svgChildren.push(h("line", { key: "dl", x1: minPx - 20, y1: minPy, x2: minPx - 20, y2: maxPh, stroke: "#4A90C4", strokeWidth: 1.5 }));
+    svgChildren.push(h("line", { key: "dt", x1: minPx - 26, y1: minPy, x2: minPx - 14, y2: minPy, stroke: "#4A90C4" }));
+    svgChildren.push(h("line", { key: "db", x1: minPx - 26, y1: maxPh, x2: minPx - 14, y2: maxPh, stroke: "#4A90C4" }));
+    svgChildren.push(h("text", { key: "dtxt", x: minPx - 30, y: midY, textAnchor: "middle", fill: "#4A90C4", fontSize: 10, fontFamily: "'Space Mono'", fontWeight: "700", transform: "rotate(-90," + (minPx - 30) + "," + midY + ")" }, ((maxPh - minPy) / 12).toFixed(0) + " ft"));
+    // Width dimension
+    const maxPx = Math.max(...pieces.map(p => p.x + p.w));
+    const midX = (minPx + maxPx) / 2;
+    svgChildren.push(h("line", { key: "wl", x1: minPx, y1: minPy - 20, x2: maxPx, y2: minPy - 20, stroke: "#4A90C4", strokeWidth: 1.5 }));
+    svgChildren.push(h("line", { key: "wlt", x1: minPx, y1: minPy - 26, x2: minPx, y2: minPy - 14, stroke: "#4A90C4" }));
+    svgChildren.push(h("line", { key: "wrt", x1: maxPx, y1: minPy - 26, x2: maxPx, y2: minPy - 14, stroke: "#4A90C4" }));
+    svgChildren.push(h("text", { key: "wtxt", x: midX, y: minPy - 28, textAnchor: "middle", fill: "#4A90C4", fontSize: 10, fontFamily: "'Space Mono'", fontWeight: "700" }, ((maxPx - minPx) / 12).toFixed(0) + " ft"));
+  }
+
+  // Sidebar buttons
+  const configBtns = Object.entries(CONFIGS).map(([k, n]) =>
+    h("button", { key: k, onClick: () => setConfig(k), style: { ...chipS, background: config === k ? "#2A6496" : "rgba(255,255,255,0.07)", borderColor: config === k ? "#4A90C4" : "rgba(255,255,255,0.12)", color: config === k ? "#fff" : "#8BA8C4" } }, n)
+  );
+  const secBtns = SECTION_OPTIONS.map(k =>
+    h("button", { key: k, onClick: () => setSectionType(k), style: { ...chipS, background: sectionType === k ? "#2A6496" : "rgba(255,255,255,0.07)", borderColor: sectionType === k ? "#4A90C4" : "rgba(255,255,255,0.12)", color: sectionType === k ? "#fff" : "#8BA8C4" } }, DOCK_SECTIONS[k].name)
+  );
+  const accBtns = Object.entries(ACCESSORIES).map(([k, a]) =>
+    h("button", { key: k, onClick: () => setAddingAcc(k), style: { ...chipS, background: addingAcc === k ? a.color : "rgba(255,255,255,0.07)", borderColor: addingAcc === k ? a.color : "rgba(255,255,255,0.12)", color: addingAcc === k ? "#fff" : "#8BA8C4", width: "100%", textAlign: "left", padding: "6px 10px" } }, addingAcc === k ? "\ud83d\udc46 Click dock to place" : "+ " + a.name)
+  );
+
+  return h("div", null,
+    // Header
+    h("div", { style: { background: "linear-gradient(135deg, #0D2440, #1B4065)", borderBottom: "2px solid #2A6496", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 } },
+      h("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+        h("div", { style: { width: 38, height: 38, borderRadius: 8, background: "linear-gradient(135deg, #2A6496, #4A90C4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: "#fff", boxShadow: "0 2px 8px rgba(42,100,150,0.4)" } }, "\u2693"),
+        h("div", null,
+          h("div", { style: { fontFamily: "'Outfit'", fontSize: 20, fontWeight: 700, color: "#fff" } }, "HCI Docks"),
+          h("div", { style: { fontFamily: "'Space Mono'", fontSize: 9, color: "#6BA3D0", textTransform: "uppercase", letterSpacing: 2 } }, "EZ Dock Layout Designer")
+        )
+      ),
+      h("div", { className: "no-print", style: { display: "flex", gap: 6 } },
+        h("button", { onClick: () => setShowParts(!showParts), style: hBtnS(showParts) }, "\ud83d\udccb Parts"),
+        h("button", { onClick: () => window.print(), style: hBtnS(false) }, "\ud83d\udda8\ufe0f Print")
+      )
+    ),
+
+    // Voice / Text Bar
+    h("div", { className: "no-print", style: { background: "rgba(0,0,0,0.3)", borderBottom: "1px solid rgba(42,100,150,0.3)", padding: "10px 20px", display: "flex", alignItems: "center", gap: 10, position: "relative" } },
+      h("button", { onClick: isListening ? stopListening : startListening, disabled: isParsing, style: {
+        width: 48, height: 48, borderRadius: "50%",
+        background: isListening ? "#DC3C3C" : isParsing ? "#555" : "linear-gradient(135deg, #2A6496, #4A90C4)",
+        border: "2px solid " + (isListening ? "#FF6B6B" : "#4A90C4"),
+        cursor: isParsing ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 24, color: "#fff", flexShrink: 0,
+        animation: isListening ? "pulse 1.5s infinite" : "none"
+      } }, isParsing ? h("div", { style: { width: 22, height: 22, border: "2.5px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" } }) : "\ud83c\udfa4"),
+      h("div", { style: { flex: 1, display: "flex", gap: 8 } },
+        h("input", { value: textInput, onChange: e => setTextInput(e.target.value), onKeyDown: e => e.key === "Enter" && handleTextSubmit(),
+          placeholder: 'Say or type: "30 foot L-shaped dock, 5 feet wide, with 2 jet ski lifts"',
+          style: { flex: 1, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 24, padding: "12px 20px", color: "#E8E4D9", fontFamily: "'Outfit'", fontSize: 14, outline: "none" }
+        }),
+        h("button", { onClick: handleTextSubmit, disabled: isParsing || !textInput.trim(), style: {
+          background: "linear-gradient(135deg, #2A6496, #4A90C4)", border: "none", borderRadius: 24, padding: "10px 24px",
+          color: "#fff", cursor: "pointer", fontFamily: "'Outfit'", fontSize: 14, fontWeight: 600,
+          opacity: (!textInput.trim() || isParsing) ? 0.4 : 1, whiteSpace: "nowrap"
+        } }, "Generate \u2192")
+      ),
+      (voiceText || voiceStatus) ? h("div", { style: { position: "absolute", left: "50%", transform: "translateX(-50%)", top: 62, background: "rgba(10,20,40,0.95)", color: "#fff", padding: "12px 24px", borderRadius: 14, fontSize: 14, fontFamily: "'Outfit'", maxWidth: 520, boxShadow: "0 8px 30px rgba(0,0,0,0.5)", zIndex: 100, textAlign: "center", border: "1px solid rgba(42,100,150,0.4)", animation: "fadeIn 0.2s ease" } },
+        voiceText ? h("div", { style: { color: "#7BC4F0", marginBottom: voiceStatus ? 6 : 0, fontStyle: "italic" } }, '"' + voiceText + '"') : null,
+        voiceStatus ? h("div", { style: { color: isParsing ? "#FFD700" : voiceStatus.includes("Done") ? "#6BBF6B" : "#FF8888", fontWeight: 600 } }, voiceStatus) : null
+      ) : null
+    ),
+
+    // Main Layout
+    h("div", { style: { display: "flex", minHeight: "calc(100vh - 140px)" } },
+      // Sidebar
+      h("div", { className: "no-print", style: { width: 270, minWidth: 270, background: "rgba(0,0,0,0.25)", borderRight: "1px solid rgba(42,100,150,0.3)", padding: 14, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 } },
+        h("div", null, h("label", { style: lblS }, "Customer Name"), h("input", { value: custName, onChange: e => setCustName(e.target.value), placeholder: "Customer name...", style: inpS })),
+        h("div", null, h("label", { style: lblS }, "Dock Configuration"), h("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 } }, ...configBtns)),
+        h("div", null, h("label", { style: lblS }, "Section Size"), h("div", { style: { display: "flex", gap: 4 } }, ...secBtns)),
+        h("div", null, h("label", { style: lblS }, "Main Length: " + mainLength + " ft"), h("input", { type: "range", min: 5, max: 100, value: mainLength, onChange: e => setMainLength(+e.target.value), style: { width: "100%" } })),
+        ["lshape", "tshape", "ushape", "fshape"].includes(config) ? h("div", null, h("label", { style: lblS }, "Arm Length: " + armLength + " ft"), h("input", { type: "range", min: 5, max: 60, value: armLength, onChange: e => setArmLength(+e.target.value), style: { width: "100%" } })) : null,
+        config === "platform" ? h("div", null, h("label", { style: lblS }, "Width: " + width + " ft"), h("input", { type: "range", min: 5, max: 40, value: width, onChange: e => setWidth(+e.target.value), style: { width: "100%" } })) : null,
+        h("div", null, h("label", { style: lblS }, "Add Accessories"), h("div", { style: { display: "flex", flexDirection: "column", gap: 3 } }, ...accBtns)),
+        placedAcc.length > 0 ? h("div", null, h("label", { style: lblS }, "Placed"),
+          ...placedAcc.map((a, i) => h("div", { key: i, style: { display: "flex", justifyContent: "space-between", padding: "4px 8px", background: "rgba(255,255,255,0.05)", borderRadius: 4, marginBottom: 2, fontSize: 11 } },
+            h("span", null, ACCESSORIES[a.type].name),
+            h("button", { onClick: () => removeAcc(i), style: { background: "rgba(200,60,60,0.3)", border: "none", borderRadius: 4, color: "#ff8888", cursor: "pointer", padding: "1px 6px", fontSize: 10 } }, "\u2715")
+          ))
+        ) : null,
+        h("div", null, h("label", { style: lblS }, "Notes"), h("textarea", { value: custNotes, onChange: e => setCustNotes(e.target.value), placeholder: "Anchoring, site notes...", style: { ...inpS, height: 55, resize: "vertical" } }))
+      ),
+
+      // Canvas
+      h("div", { style: { flex: 1, display: "flex", flexDirection: "column" } },
+        // Stats bar
+        h("div", { style: { display: "flex", gap: 14, padding: "10px 18px", background: "rgba(0,0,0,0.15)", borderBottom: "1px solid rgba(42,100,150,0.2)", flexWrap: "wrap" } },
+          custName ? statEl("Customer", custName) : null,
+          statEl("Config", CONFIGS[config]),
+          statEl("Sections", pieces.length),
+          statEl("Capacity", totalCap.toLocaleString() + " lbs"),
+          statEl("Accessories", placedAcc.length)
+        ),
+        // SVG area
+        h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, position: "relative", background: "radial-gradient(ellipse at center, rgba(42,100,150,0.08) 0%, transparent 70%)" } },
+          addingAcc ? h("div", { style: { position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", background: ACCESSORIES[addingAcc].color, color: "#fff", padding: "5px 16px", borderRadius: 20, fontSize: 12, fontFamily: "'Outfit'", fontWeight: 500, boxShadow: "0 4px 12px rgba(0,0,0,0.3)", zIndex: 10 } }, "Click to place " + ACCESSORIES[addingAcc].name) : null,
+          h("svg", { ref: svgRef, viewBox: bounds.minX + " " + bounds.minY + " " + viewW + " " + viewH, style: { maxWidth: "100%", maxHeight: "calc(100vh - 240px)", cursor: addingAcc ? "crosshair" : "default", filter: "drop-shadow(0 4px 20px rgba(0,0,0,0.3))" }, onClick: handleSvgClick }, ...svgChildren)
+        )
+      ),
+
+      // Parts Panel
+      showParts ? h("div", { style: { width: 290, minWidth: 290, background: "rgba(0,0,0,0.3)", borderLeft: "1px solid rgba(42,100,150,0.3)", padding: 16, overflowY: "auto" } },
+        h("h3", { style: { fontFamily: "'Outfit'", fontSize: 15, fontWeight: 600, color: "#fff", marginBottom: 4 } }, "\ud83d\udccb Parts List"),
+        custName ? h("div", { style: { fontSize: 12, color: "#6BA3D0", marginBottom: 12 } }, "Customer: " + custName) : null,
+        secEl("Dock Sections", Object.entries(parts.sections).map(([k, c]) => rowEl(DOCK_SECTIONS[k].name, "x" + c))),
+        Object.keys(parts.accessories).length > 0 ? secEl("Accessories", Object.entries(parts.accessories).map(([k, c]) => rowEl(ACCESSORIES[k].name, "x" + c))) : null,
+        secEl("Hardware", [rowEl("Connection Couplings", "x" + parts.couplings), rowEl("Coupling Bolts", "x" + parts.couplings)]),
+        h("div", { style: { background: "rgba(42,100,150,0.2)", borderRadius: 8, padding: 12, border: "1px solid rgba(42,100,150,0.3)", marginTop: 10 } },
+          h("div", { style: phS }, "Summary"),
+          rowEl("Total Sections", pieces.length, true),
+          rowEl("Capacity", totalCap.toLocaleString() + " lbs", true),
+          rowEl("Config", CONFIGS[config], true)
+        ),
+        custNotes ? h("div", { style: { marginTop: 12 } }, h("div", { style: phS }, "Notes"), h("div", { style: { fontSize: 12, color: "#8BA8C4", lineHeight: 1.5, background: "rgba(255,255,255,0.03)", padding: 8, borderRadius: 6 } }, custNotes)) : null
+      ) : null
+    )
+  );
+}
+
+function statEl(l, v) {
+  return h("div", { key: l, style: { display: "flex", flexDirection: "column", gap: 1 } },
+    h("span", { style: { fontFamily: "'Space Mono'", fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#6BA3D0" } }, l),
+    h("span", { style: { fontFamily: "'Outfit'", fontSize: 13, fontWeight: 600, color: "#fff" } }, v)
+  );
+}
+function secEl(t, rows) {
+  return h("div", { key: t, style: { marginBottom: 14 } }, h("div", { style: phS }, t), ...rows);
+}
+function rowEl(l, v, white) {
+  return h("div", { key: l, style: { display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: "#B8CCE0", borderBottom: white ? "none" : "1px solid rgba(255,255,255,0.04)", fontFamily: "'Outfit'" } },
+    h("span", null, l),
+    h("span", { style: { fontFamily: "'Space Mono'", fontWeight: 700, color: white ? "#fff" : "#4A90C4" } }, v)
+  );
+}
+function hBtnS(a) { return { background: a ? "#2A6496" : "rgba(42,100,150,0.3)", border: "1px solid #2A6496", borderRadius: 6, padding: "6px 14px", color: "#fff", cursor: "pointer", fontFamily: "'Outfit'", fontSize: 12, fontWeight: 500 }; }
+
+const lblS = { fontFamily: "'Space Mono'", fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, color: "#6BA3D0", display: "block", marginBottom: 4 };
+const inpS = { width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, padding: "7px 10px", color: "#E8E4D9", fontFamily: "'Outfit'", fontSize: 13, outline: "none" };
+const chipS = { border: "1px solid", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontFamily: "'Outfit'", fontWeight: 500, cursor: "pointer", transition: "all 0.15s", background: "rgba(255,255,255,0.07)" };
+const phS = { fontFamily: "'Space Mono'", fontSize: 10, textTransform: "uppercase", letterSpacing: 1.5, color: "#6BA3D0", marginBottom: 6, paddingBottom: 3, borderBottom: "1px solid rgba(42,100,150,0.3)" };
+
+ReactDOM.render(h(DockDesigner), document.getElementById("app"));
+</script>
+</body>
+</html>
